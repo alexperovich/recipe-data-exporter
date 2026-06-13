@@ -1,0 +1,48 @@
+{
+    "id": "create:mix_sand",
+    "type": "create:mixing",
+    "data": {
+        "ebf_temp": 9000,
+        "vacuum_level": 80
+    },
+    "duration": 804,
+    "voltage": 122880,
+    "itemInputs": {
+        "0": {
+            "item": "minecraft:sand",
+            "count": 2
+        },
+        "1": {
+            "tag": "forge:gravel",
+            "count": 1
+        },
+        "3": {
+            "item": "minecraft:clay_ball",
+            "count": 4,
+            "probability": 50000
+        }
+    },
+    "fluidInputs": {
+        "0": {
+            "fluid": "minecraft:water",
+            "amount": 1000
+        },
+        "1": {
+            "tag": "forge:lava",
+            "amount": 500
+        }
+    },
+    "itemOutputs": {
+        "0": {
+            "item": "minecraft:sand",
+            "count": 3,
+            "probability": 20000
+        }
+    },
+    "fluidOutputs": {
+        "0": {
+            "fluid": "minecraft:water",
+            "amount": 500
+        }
+    }
+}

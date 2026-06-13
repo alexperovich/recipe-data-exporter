@@ -1,0 +1,31 @@
+# Gradle
+.gradle/
+build/
+
+# Gradle wrapper cache (allow wrapper JAR/properties/scripts)
+!gradle/wrapper/gradle-wrapper.jar
+
+# Java
+*.class
+out/
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDEs
+.idea/
+*.iml
+
+# Forge runtime and local development artifacts
+run/
+logs/
+crash-reports/
+local/
+
+# Local environment files
+.env
+.env.*

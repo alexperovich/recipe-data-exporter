@@ -1,0 +1,6 @@
+{
+    "terminal.integrated.agentHostProfile.linux": "ubuntu",
+    "chat.tools.terminal.terminalProfile.linux": {
+        "path": "ubuntu"
+    }
+}

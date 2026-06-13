@@ -1,0 +1,12 @@
+{
+    "id": "mod:name",
+    "name": "Recipe Type Name",
+    "crafters": [
+        "mod:smol_assembler",
+        "mod:swole_assembler"
+    ],
+    "itemInputDimensions": [1, 2],
+    "itemOutputDimensions": [3, 4],
+    "fluidInputDimensions": [1, 2],
+    "fluidOutputDimensions": [3, 4]
+}
