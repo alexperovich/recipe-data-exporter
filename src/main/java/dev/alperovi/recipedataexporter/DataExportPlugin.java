@@ -8,7 +8,7 @@ import org.jetbrains.annotations.Nullable;
 
 @JeiPlugin
 public final class DataExportPlugin implements IModPlugin {
-    private static final ResourceLocation PLUGIN_UID = new ResourceLocation(ItemExporterMod.MOD_ID, "data_export");
+    private static final ResourceLocation PLUGIN_UID = new ResourceLocation(RecipeDataExporterMod.MOD_ID, "data_export");
 
     @Nullable
     private static volatile IJeiRuntime jeiRuntime;

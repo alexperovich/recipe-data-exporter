@@ -9,9 +9,9 @@ public record RecipeExport(
         Map<String, Object> data,
         long duration,
         long voltage,
-        Map<String, ItemIngredientExport> itemInputs,
-        Map<String, FluidIngredientExport> fluidInputs,
-        Map<String, ItemIngredientExport> itemOutputs,
-        Map<String, FluidIngredientExport> fluidOutputs
+        Map<String, ItemStackExport> itemInputs,
+        Map<String, FluidStackExport> fluidInputs,
+        Map<String, ItemStackExport> itemOutputs,
+        Map<String, FluidStackExport> fluidOutputs
 ) {
 }

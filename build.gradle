@@ -53,6 +53,10 @@ repositories {
             includeGroup 'com.gregtechceu.gtceu'
         }
     }
+    maven {
+        // Create, Ponder, Flywheel
+        url = 'https://maven.createmod.net'
+    }
 }
 
 dependencies {
@@ -65,6 +69,14 @@ dependencies {
     runtimeOnly(fg.deobf("mezz.jei:jei-${mc_version}-forge:${jei_version}"))
 
     implementation fg.deobf("com.gregtechceu.gtceu:gtceu-${mc_version}:${gtm_version}")
+
+    // compile against Create's API but rely on the modpack to provide it at runtime
+    compileOnly(fg.deobf("com.simibubi.create:create-${mc_version}:${create_version}:slim")) {
+        transitive = false
+    }
+
+    // JSON serialization
+    implementation "com.google.code.gson:gson:2.10.1"
 }
 
 sourceSets.main.resources { srcDir 'src/generated/resources' }

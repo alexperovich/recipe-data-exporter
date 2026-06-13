@@ -1,20 +1,11 @@
 package dev.alperovi.recipedataexporter;
 
-import dev.alperovi.recipedataexporter.command.ExportItemsCommand;
 import dev.alperovi.recipedataexporter.command.ExportDataCommand;
-import dev.alperovi.recipedataexporter.export.DataExportService;
-import dev.alperovi.recipedataexporter.export.ItemExportService;
-import dev.alperovi.recipedataexporter.render.FramebufferRenderer;
 import com.mojang.logging.LogUtils;
-import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.RegisterCommandsEvent;
-import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
-import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
-import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
-import net.minecraftforge.fml.loading.FMLEnvironment;
 import org.slf4j.Logger;
 
 @Mod(RecipeDataExporterMod.MOD_ID)
@@ -25,5 +16,17 @@ public final class RecipeDataExporterMod {
 
     public RecipeDataExporterMod() {
         LOGGER.info("{} loaded", MOD_NAME);
+        MinecraftForge.EVENT_BUS.register(CommandEventHandler.class);
+    }
+
+    /**
+     * Handles command registration events.
+     */
+    @Mod.EventBusSubscriber(modid = MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
+    public static class CommandEventHandler {
+        @SubscribeEvent
+        public static void onRegisterCommands(RegisterCommandsEvent event) {
+            event.getDispatcher().register(ExportDataCommand.register());
+        }
     }
 }
