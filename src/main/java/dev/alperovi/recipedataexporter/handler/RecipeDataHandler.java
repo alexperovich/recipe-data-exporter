@@ -17,6 +17,13 @@ import net.minecraft.world.item.crafting.Recipe;
 import net.minecraftforge.fluids.FluidStack;
 import net.minecraftforge.registries.ForgeRegistries;
 
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
 /**
  * Abstract handler for converting live recipe objects (obtained from the JEI
  * recipe manager) into {@link RecipeExport} objects. Subclasses handle the
@@ -132,6 +139,100 @@ public abstract class RecipeDataHandler {
     }
 
     /**
+     * Returns a stable identity key for a vanilla {@link Ingredient} that groups
+     * equal ingredients together: tag-based ingredients are keyed by their tag id
+     * and item-based ingredients by their first matching item's id (plus nbt when
+     * present). Returns null for empty or unresolvable ingredients. Used to merge
+     * identical inputs that vanilla represents as separate single-count slots.
+     */
+    protected static String ingredientKey(Ingredient ingredient) {
+        if (ingredient == null || ingredient.isEmpty()) {
+            return null;
+        }
+        String tag = tagFromIngredient(ingredient);
+        if (tag != null) {
+            return "#" + tag;
+        }
+        ItemStack[] stacks = ingredient.getItems();
+        if (stacks.length == 0) {
+            return null;
+        }
+        ItemStack first = stacks[0];
+        String id = itemId(first);
+        if (id == null) {
+            return null;
+        }
+        String nbt = nbt(first);
+        return nbt != null ? id + "#" + nbt : id;
+    }
+
+    /**
+     * Merges item stacks that share the same table key into a single stack whose
+     * count is the sum of the merged counts, sorts the merged stacks by descending
+     * count, and assigns sequential slot indices starting at 0. The probability of
+     * the first occurrence of each key is preserved. Null entries are skipped.
+     */
+    protected static Map<String, ItemStackExport> mergeAndSortByCount(Collection<ItemStackExport> items) {
+        Map<String, ItemStackExport> mergedByKey = new LinkedHashMap<>();
+        for (ItemStackExport item : items) {
+            if (item == null) {
+                continue;
+            }
+            ItemStackExport existing = mergedByKey.get(item.key());
+            if (existing == null) {
+                mergedByKey.put(item.key(), item);
+            } else {
+                mergedByKey.put(item.key(), new ItemStackExport(
+                        existing.key(), existing.count() + item.count(), existing.probability()));
+            }
+        }
+
+        List<ItemStackExport> sorted = new ArrayList<>(mergedByKey.values());
+        sorted.sort(Comparator.comparingInt(ItemStackExport::count).reversed());
+
+        Map<String, ItemStackExport> result = new LinkedHashMap<>();
+        int index = 0;
+        for (ItemStackExport item : sorted) {
+            result.put(String.valueOf(index), item);
+            index++;
+        }
+        return result;
+    }
+
+    /**
+     * Merges fluid stacks that share the same table key into a single stack whose
+     * amount is the sum of the merged amounts, sorts the merged stacks by
+     * descending amount, and assigns sequential slot indices starting at 0. Null
+     * entries are skipped.
+     */
+    protected static Map<String, FluidStackExport> mergeFluidsAndSortByAmount(Collection<FluidStackExport> fluids) {
+        Map<String, FluidStackExport> mergedByKey = new LinkedHashMap<>();
+        for (FluidStackExport fluid : fluids) {
+            if (fluid == null) {
+                continue;
+            }
+            FluidStackExport existing = mergedByKey.get(fluid.key());
+            if (existing == null) {
+                mergedByKey.put(fluid.key(), fluid);
+            } else {
+                mergedByKey.put(fluid.key(), new FluidStackExport(
+                        existing.key(), existing.amount() + fluid.amount()));
+            }
+        }
+
+        List<FluidStackExport> sorted = new ArrayList<>(mergedByKey.values());
+        sorted.sort(Comparator.comparingLong(FluidStackExport::amount).reversed());
+
+        Map<String, FluidStackExport> result = new LinkedHashMap<>();
+        int index = 0;
+        for (FluidStackExport fluid : sorted) {
+            result.put(String.valueOf(index), fluid);
+            index++;
+        }
+        return result;
+    }
+
+    /**
      * Returns the registry id of an item stack's item, or null when unregistered.
      */
     protected static String itemId(ItemStack stack) {
@@ -171,6 +272,13 @@ public abstract class RecipeDataHandler {
             JsonObject object = json.getAsJsonObject();
             if (object.has("tag") && !object.get("tag").isJsonNull()) {
                 return object.get("tag").getAsString();
+            }
+            // GregTech (and other mods) wrap the real ingredient in a sized
+            // ingredient that nests it under "ingredient" (e.g. {"type":
+            // "gtceu:sized", "count": 1, "ingredient": {"tag": "..."}}); descend
+            // into the wrapper so the nested tag is still recovered.
+            if (object.has("ingredient") && !object.get("ingredient").isJsonNull()) {
+                return tagFromJson(object.get("ingredient"));
             }
         }
         return null;

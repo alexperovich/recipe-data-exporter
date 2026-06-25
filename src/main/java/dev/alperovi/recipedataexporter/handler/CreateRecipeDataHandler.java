@@ -16,6 +16,7 @@ import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.Recipe;
 import net.minecraftforge.fluids.FluidStack;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -32,6 +33,12 @@ import java.util.Set;
  * (e.g. "create:compacting" -> "create:packing").
  */
 public class CreateRecipeDataHandler extends RecipeDataHandler {
+
+    /** Recipe type id of Create's mechanical crafting recipes. */
+    public static final String MECHANICAL_CRAFTING_TYPE_ID = "create:mechanical_crafting";
+
+    /** Fixed duration (in ticks) assigned to every exported Create recipe. */
+    private static final long EXPORT_DURATION_TICKS = 20L;
 
     /** Create-family namespaces whose JEI categories this handler serves. */
     private static final Set<String> NAMESPACES = Set.of(
@@ -63,10 +70,12 @@ public class CreateRecipeDataHandler extends RecipeDataHandler {
     public CreateRecipeDataHandler(ExportTables tables) {
         super(tables);
     }
-
     @Override
     public RecipeExport convert(IRecipeCategory<?> category, Object recipe, RegistryAccess registryAccess) {
         Object unwrapped = unwrap(recipe);
+        if (MECHANICAL_CRAFTING_TYPE_ID.equals(category.getRecipeType().getUid().toString())) {
+            return convertMechanicalCrafting(category, recipe, unwrapped, registryAccess);
+        }
         if (!(unwrapped instanceof ProcessingRecipe<?> processingRecipe)) {
             return null;
         }
@@ -85,20 +94,75 @@ public class CreateRecipeDataHandler extends RecipeDataHandler {
         Map<String, ItemStackExport> itemOutputs = itemOutputs(processingRecipe.getRollableResults());
         Map<String, FluidStackExport> fluidOutputs = fluidOutputs(processingRecipe.getFluidResults());
 
-        long duration = processingRecipe.getProcessingDuration();
-
         return new RecipeExport(
                 recipeId,
                 recipeTypeId,
                 sourceType,
                 Map.of(),
-                duration,
+                EXPORT_DURATION_TICKS,
                 0L,
                 itemInputs,
                 fluidInputs,
                 itemOutputs,
                 fluidOutputs
         );
+    }
+
+    /**
+     * Converts a Create mechanical crafting recipe. Unlike processing recipes,
+     * its inputs come from the shaped ingredient grid: identical ingredients are
+     * merged into a single stack whose count is the number of occurrences, and
+     * the merged stacks are sorted by descending stack size. The single result
+     * item is the only output.
+     */
+    private RecipeExport convertMechanicalCrafting(IRecipeCategory<?> category, Object recipe,
+                                                   Object unwrapped, RegistryAccess registryAccess) {
+        if (!(unwrapped instanceof Recipe<?> recipeObject)) {
+            return null;
+        }
+        String recipeId = recipeId(category, recipe);
+        if (recipeId == null) {
+            return null;
+        }
+        String sourceType = serializerId(recipeObject);
+
+        Map<String, ItemStackExport> itemInputs = mergedSortedInputs(recipeObject.getIngredients());
+        Map<String, ItemStackExport> itemOutputs = new LinkedHashMap<>();
+        ItemStackExport result = itemFromStack(recipeObject.getResultItem(registryAccess), null);
+        if (result != null) {
+            itemOutputs.put("0", result);
+        }
+
+        return new RecipeExport(
+                recipeId,
+                MECHANICAL_CRAFTING_TYPE_ID,
+                sourceType,
+                Map.of(),
+                EXPORT_DURATION_TICKS,
+                0L,
+                itemInputs,
+                Map.<String, FluidStackExport>of(),
+                itemOutputs,
+                Map.<String, FluidStackExport>of()
+        );
+    }
+
+    /**
+     * Builds merged, sorted item inputs from a shaped ingredient list. Each
+     * non-empty ingredient contributes a count of 1; ingredients resolving to the
+     * same item or tag are merged into one stack whose count is the sum. The
+     * resulting stacks are sorted by descending stack size and assigned
+     * sequential slot indices starting at 0.
+     */
+    private Map<String, ItemStackExport> mergedSortedInputs(List<Ingredient> ingredients) {
+        List<ItemStackExport> converted = new ArrayList<>();
+        for (Ingredient ingredient : ingredients) {
+            ItemStackExport item = itemFromIngredient(ingredient, 1, null);
+            if (item != null) {
+                converted.add(item);
+            }
+        }
+        return mergeAndSortByCount(converted);
     }
 
     /**

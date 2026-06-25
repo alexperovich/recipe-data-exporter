@@ -3,6 +3,7 @@ package dev.alperovi.recipedataexporter.handler;
 import com.gregtechceu.gtceu.api.capability.recipe.FluidRecipeCapability;
 import com.gregtechceu.gtceu.api.capability.recipe.ItemRecipeCapability;
 import com.gregtechceu.gtceu.api.recipe.GTRecipe;
+import com.gregtechceu.gtceu.api.recipe.GTRecipeType;
 import com.gregtechceu.gtceu.api.recipe.RecipeHelper;
 import com.gregtechceu.gtceu.api.recipe.content.Content;
 import com.gregtechceu.gtceu.api.recipe.ingredient.FluidIngredient;
@@ -18,9 +19,12 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraftforge.fluids.FluidStack;
 
+import java.lang.reflect.Method;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Recipe data handler for GregTech (gtceu) machine recipes. Reads the live
@@ -37,6 +41,15 @@ public class GregTechRecipeDataHandler extends RecipeDataHandler {
 
     /** GregTech expresses chances out of 10000 (100%). */
     private static final int MAX_CHANCE = 10000;
+
+    /**
+     * Cached resolution of the fork-only {@code GTRecipeType.isLayered()} method.
+     * The compile-time GTCEu API (upstream 7.5.3) does not declare it, but the
+     * runtime fork does, so it is invoked reflectively. {@code null} once resolved
+     * means the method is absent (no recipe type is layered).
+     */
+    private static volatile Method layeredMethod;
+    private static volatile boolean layeredMethodResolved;
 
     public GregTechRecipeDataHandler(ExportTables tables) {
         super(tables);
@@ -62,6 +75,11 @@ public class GregTechRecipeDataHandler extends RecipeDataHandler {
         Map<String, FluidStackExport> fluidInputs = fluidContents(gtRecipe.getInputContents(FluidRecipeCapability.CAP));
         Map<String, ItemStackExport> itemOutputs = itemContents(gtRecipe.getOutputContents(ItemRecipeCapability.CAP));
         Map<String, FluidStackExport> fluidOutputs = fluidContents(gtRecipe.getOutputContents(FluidRecipeCapability.CAP));
+
+        if (isLayered(gtRecipe.recipeType)) {
+            itemInputs = mergeAndSortByCount(itemInputs.values());
+            fluidInputs = mergeFluidsAndSortByAmount(fluidInputs.values());
+        }
 
         long duration = gtRecipe.duration;
         long voltage = RecipeHelper.getRealEUtWithIO(gtRecipe).signedVoltage();
@@ -145,12 +163,103 @@ public class GregTechRecipeDataHandler extends RecipeDataHandler {
      * Reads the integer configuration of a programmed circuit from its NBT,
      * defaulting to 0 when absent.
      */
-    private int circuitConfiguration(ItemStack stack) {
+    private static int circuitConfiguration(ItemStack stack) {
         CompoundTag tag = stack.getTag();
         if (tag != null && tag.contains("Configuration", Tag.TAG_INT)) {
             return tag.getInt("Configuration");
         }
         return 0;
+    }
+
+    /**
+     * Returns whether the given GregTech recipe type is "layered". Layered recipe
+     * types lay their item inputs out over a multi-row grid, so their inputs are
+     * normalized (merged and sorted) on export the same way mechanical crafting
+     * recipes are. The {@code isLayered()} accessor only exists on the runtime
+     * fork of GTCEu, so it is invoked reflectively against the upstream compile
+     * API; an absent method means no recipe type is layered.
+     */
+    static boolean isLayered(GTRecipeType recipeType) {
+        if (recipeType == null) {
+            return false;
+        }
+        Method method = layeredMethod();
+        if (method == null) {
+            return false;
+        }
+        try {
+            Object result = method.invoke(recipeType);
+            return result instanceof Boolean bool && bool;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /**
+     * Resolves and caches the fork-only {@code GTRecipeType.isLayered()} method,
+     * returning null when it is not present on the runtime API.
+     */
+    private static Method layeredMethod() {
+        if (!layeredMethodResolved) {
+            synchronized (GregTechRecipeDataHandler.class) {
+                if (!layeredMethodResolved) {
+                    try {
+                        layeredMethod = GTRecipeType.class.getMethod("isLayered");
+                    } catch (NoSuchMethodException e) {
+                        layeredMethod = null;
+                    }
+                    layeredMethodResolved = true;
+                }
+            }
+        }
+        return layeredMethod;
+    }
+
+    /**
+     * Counts the distinct merged item inputs of a GregTech recipe, grouping inputs
+     * the same way {@link #itemContents} merges them for layered recipe types.
+     * Used to derive the input grid dimensions of layered recipe types.
+     */
+    static int mergedItemInputCount(GTRecipe recipe) {
+        Set<String> keys = new HashSet<>();
+        for (Content content : recipe.getInputContents(ItemRecipeCapability.CAP)) {
+            String key = itemContentKey(content);
+            if (key != null) {
+                keys.add(key);
+            }
+        }
+        return keys.size();
+    }
+
+    /**
+     * Returns a stable identity key for an item {@link Content} matching the
+     * grouping used by {@link #itemContent}: programmed circuits are keyed by their
+     * configuration, tag-based inputs by their tag id, and concrete items by their
+     * id (plus nbt when present). Returns null for empty contents.
+     */
+    private static String itemContentKey(Content content) {
+        Ingredient ingredient = ItemRecipeCapability.CAP.of(content.getContent());
+        if (ingredient == null || ingredient.isEmpty()) {
+            return null;
+        }
+        ItemStack[] stacks = ingredient.getItems();
+        if (stacks.length == 0) {
+            return null;
+        }
+        ItemStack first = stacks[0];
+        if (CIRCUIT_ITEM_ID.equals(itemId(first))) {
+            return PROGRAMMED_CIRCUIT_ID + "#" + circuitConfiguration(first);
+        }
+        String tag = tagFromIngredient(ingredient);
+        if (tag != null) {
+            return "#" + tag;
+        }
+        String id = itemId(first);
+        if (id == null) {
+            return null;
+        }
+        String nbt = nbt(first);
+        return nbt != null ? id + "#" + nbt : id;
     }
 
     /**
