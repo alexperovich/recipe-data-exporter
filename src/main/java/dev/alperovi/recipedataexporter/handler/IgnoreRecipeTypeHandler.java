@@ -25,7 +25,6 @@ public class IgnoreRecipeTypeHandler extends RecipeTypeHandler {
             "gtceu:bedrock_fluid_diagram",
             "gtceu:programmed_circuit",
             "gtceu:ore_processing_diagram",
-            "gtceu:multiblock_info",
             "gtceu:research_station",
             "create:automatic_*",
             "create:block_cutting",

@@ -97,7 +97,7 @@ public abstract class RecipeDataHandler {
             return null;
         }
         String key = tables.internItem(itemId(stack), null, nbt(stack), stack);
-        return new ItemStackExport(key, stack.getCount(), probability);
+        return new ItemStackExport(key, stack.getCount(), probability, null);
     }
 
     /**
@@ -115,14 +115,14 @@ public abstract class RecipeDataHandler {
         if (tag != null) {
             ItemStack representative = stacks.length > 0 ? stacks[0] : null;
             String key = tables.internItem(null, tag, null, representative);
-            return new ItemStackExport(key, count, probability);
+            return new ItemStackExport(key, count, probability, null);
         }
         if (stacks.length == 0) {
             return null;
         }
         ItemStack first = stacks[0];
         String key = tables.internItem(itemId(first), null, nbt(first), first);
-        return new ItemStackExport(key, count, probability);
+        return new ItemStackExport(key, count, probability, null);
     }
 
     /**
@@ -183,7 +183,8 @@ public abstract class RecipeDataHandler {
                 mergedByKey.put(item.key(), item);
             } else {
                 mergedByKey.put(item.key(), new ItemStackExport(
-                        existing.key(), existing.count() + item.count(), existing.probability()));
+                        existing.key(), existing.count() + item.count(), existing.probability(),
+                        existing.tierChanceBoost()));
             }
         }
 

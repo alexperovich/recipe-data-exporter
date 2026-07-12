@@ -5,6 +5,7 @@ import com.google.gson.GsonBuilder;
 import com.mojang.logging.LogUtils;
 import dev.alperovi.recipedataexporter.handler.CreateRecipeDataHandler;
 import dev.alperovi.recipedataexporter.handler.GenericRecipeDataHandler;
+import dev.alperovi.recipedataexporter.handler.GregTechMultiblockInfoRecipeDataHandler;
 import dev.alperovi.recipedataexporter.handler.GregTechRecipeDataHandler;
 import dev.alperovi.recipedataexporter.handler.IgnoreRecipeDataHandler;
 import dev.alperovi.recipedataexporter.handler.MinecraftRecipeDataHandler;
@@ -63,6 +64,8 @@ public class RecipeDataExportService {
             new HandlerRegistration(IgnoreRecipeDataHandler::canHandle, IgnoreRecipeDataHandler::new),
             new HandlerRegistration(MinecraftRecipeDataHandler::canHandle, MinecraftRecipeDataHandler::new),
             new HandlerRegistration(CreateRecipeDataHandler::canHandle, CreateRecipeDataHandler::new),
+            new HandlerRegistration(GregTechMultiblockInfoRecipeDataHandler::canHandle,
+                    GregTechMultiblockInfoRecipeDataHandler::new),
             new HandlerRegistration(GregTechRecipeDataHandler::canHandle, GregTechRecipeDataHandler::new)
     );
 

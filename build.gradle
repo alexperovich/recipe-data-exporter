@@ -54,6 +54,14 @@ repositories {
         }
     }
     maven {
+        // LDLib (LowDragLib); GregTech bundles it via JarJar at runtime, so it is only needed at compile time
+        name = 'FirstDarkDev Maven'
+        url = 'https://maven.firstdark.dev/snapshots'
+        content {
+            includeGroup 'com.lowdragmc.ldlib'
+        }
+    }
+    maven {
         // Create, Ponder, Flywheel
         url = 'https://maven.createmod.net'
     }
@@ -69,6 +77,14 @@ dependencies {
     runtimeOnly(fg.deobf("mezz.jei:jei-${mc_version}-forge:${jei_version}"))
 
     implementation fg.deobf("com.gregtechceu.gtceu:gtceu-${mc_version}:${gtm_version}")
+
+    // LDLib (LowDragLib) API, referenced by GregTech's multiblock pattern classes.
+    // GregTech bundles it via JarJar at runtime, so it is only needed at compile time.
+    // Only stable LDLib/Minecraft class symbols are referenced, so the raw (non-remapped)
+    // artifact is sufficient and avoids ForgeGradle resolving its unrelated transitive deps.
+    compileOnly("com.lowdragmc.ldlib:ldlib-forge-${mc_version}:${ldlib_version}") {
+        transitive = false
+    }
 
     // compile against Create's API but rely on the modpack to provide it at runtime
     compileOnly(fg.deobf("com.simibubi.create:create-${mc_version}:${create_version}:slim")) {

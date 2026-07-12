@@ -128,6 +128,8 @@ public class GregTechRecipeDataHandler extends RecipeDataHandler {
             return null;
         }
         Long probability = content.chance < content.maxChance ? (long) content.chance : null;
+        Long tierChanceBoost = content.chance < content.maxChance && content.tierChanceBoost != 0
+                ? (long) content.tierChanceBoost : null;
 
         ItemStack[] stacks = ingredient.getItems();
         if (stacks.length == 0) {
@@ -137,16 +139,16 @@ public class GregTechRecipeDataHandler extends RecipeDataHandler {
 
         if (CIRCUIT_ITEM_ID.equals(itemId(first))) {
             String key = tables.internItem(PROGRAMMED_CIRCUIT_ID, null, circuitNbt(first), first);
-            return new ItemStackExport(key, first.getCount(), probability);
+            return new ItemStackExport(key, first.getCount(), probability, tierChanceBoost);
         }
 
         String tag = tagFromIngredient(ingredient);
         if (tag != null) {
             String key = tables.internItem(null, tag, null, first);
-            return new ItemStackExport(key, first.getCount(), probability);
+            return new ItemStackExport(key, first.getCount(), probability, tierChanceBoost);
         }
         String key = tables.internItem(itemId(first), null, nbt(first), first);
-        return new ItemStackExport(key, first.getCount(), probability);
+        return new ItemStackExport(key, first.getCount(), probability, tierChanceBoost);
     }
 
     /**
