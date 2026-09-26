@@ -283,13 +283,19 @@ public class GregTechRecipeDataHandler extends RecipeDataHandler {
     /**
      * Converts a single fluid {@link Content} into a {@link FluidStackExport}.
      * Tag-based ingredients preserve the tag id (with the first matching fluid as
-     * representative); otherwise the first concrete fluid stack is used.
+     * representative); otherwise the first concrete fluid stack is used. Chanced
+     * fluid outputs carry their probability and per-voltage-tier chance boost the
+     * same way chanced item outputs do (see {@link #itemContent}).
      */
     private FluidStackExport fluidContent(Content content) {
         FluidIngredient ingredient = FluidRecipeCapability.CAP.of(content.getContent());
         if (ingredient == null) {
             return null;
         }
+        Long probability = content.chance < content.maxChance ? (long) content.chance : null;
+        Long tierChanceBoost = content.chance < content.maxChance && content.tierChanceBoost != 0
+                ? (long) content.tierChanceBoost : null;
+
         FluidStack[] stacks = ingredient.getStacks();
         FluidStack first = stacks.length > 0 ? stacks[0] : null;
 
@@ -297,12 +303,12 @@ public class GregTechRecipeDataHandler extends RecipeDataHandler {
         if (tag != null) {
             String key = tables.internFluid(null, tag, first);
             long amount = first != null ? first.getAmount() : ingredient.getAmount();
-            return new FluidStackExport(key, amount);
+            return new FluidStackExport(key, amount, probability, tierChanceBoost);
         }
         if (first == null) {
             return null;
         }
-        return fluidFromStack(first);
+        return fluidFromStack(first, probability, tierChanceBoost);
     }
 
     /**

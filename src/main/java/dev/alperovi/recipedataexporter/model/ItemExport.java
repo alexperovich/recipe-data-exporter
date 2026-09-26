@@ -1,6 +1,5 @@
 package dev.alperovi.recipedataexporter.model;
 
-import java.util.List;
 import java.util.Map;
 
 /**
@@ -11,7 +10,9 @@ import java.util.Map;
  * <p>The {@code displayName}, {@code modName}, {@code tooltip} and {@code image}
  * fields are enriched after recipe conversion from the JEI ingredient helpers and
  * renderer; they are null/absent when the entry could not be resolved (e.g. a
- * tag with no matching items, or when the icon failed to render).
+ * tag with no matching items, or when the icon failed to render). The tooltip is
+ * structured so consumers can reproduce GTCEu's default, modifier-section and
+ * paginated machine tooltip modes.
  *
  * <p>The {@code metadata} map carries extra, source-specific properties of the
  * item (for example GregTech heating-coil heat capacity or turbine rotor stats);
@@ -23,7 +24,7 @@ public record ItemExport(
         String nbt,
         String displayName,
         String modName,
-        List<String> tooltip,
+        ItemTooltipExport tooltip,
         String image,
         Map<String, Object> metadata
 ) {

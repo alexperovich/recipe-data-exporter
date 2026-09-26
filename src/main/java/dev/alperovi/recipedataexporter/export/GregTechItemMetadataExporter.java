@@ -1,6 +1,5 @@
 package dev.alperovi.recipedataexporter.export;
 
-import com.gregtechceu.gtceu.api.GTValues;
 import com.gregtechceu.gtceu.api.block.ICoilType;
 import com.gregtechceu.gtceu.api.item.MetaMachineItem;
 import com.gregtechceu.gtceu.api.machine.MachineDefinition;
@@ -12,15 +11,19 @@ import com.gregtechceu.gtceu.common.block.CoilBlock;
 import com.gregtechceu.gtceu.common.item.TurbineRotorBehaviour;
 import com.mojang.logging.LogUtils;
 import dev.alperovi.recipedataexporter.model.ItemExport;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.TooltipFlag;
 import org.slf4j.Logger;
 
-import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Enriches the deduplicated item table with extra, GregTech-specific properties
@@ -38,6 +41,9 @@ public class GregTechItemMetadataExporter {
 
     /** Sentinel returned by the rotor behaviour when a property is unavailable. */
     private static final int MISSING_ROTOR_VALUE = -1;
+    private static final String CUSTOM_TOOLTIPS_NBT_KEY = "custom_tooltips";
+    private static final String ABSOLUTE_PARALLEL_TOOLTIP = "Without extra energy consumption";
+    private static final Pattern MAX_PARALLEL_TOOLTIP = Pattern.compile("Allows to run up to (\\d+) recipes in parallel\\.?");
 
     private final ExportTables tables;
 
@@ -64,7 +70,7 @@ public class GregTechItemMetadataExporter {
                 continue;
             }
             try {
-                Map<String, Object> metadata = computeMetadata(representative);
+                Map<String, Object> metadata = computeMetadata(representative, key);
                 if (!metadata.isEmpty()) {
                     tables.replaceItem(key, new ItemExport(base.id(), base.tag(), base.nbt(),
                             base.displayName(), base.modName(), base.tooltip(), base.image(), metadata));
@@ -81,36 +87,56 @@ public class GregTechItemMetadataExporter {
      * Collects all known GregTech properties of the given stack into a map,
      * returning an empty map when the item has none.
      */
-    private Map<String, Object> computeMetadata(ItemStack stack) {
+    private Map<String, Object> computeMetadata(ItemStack stack, String key) {
         Map<String, Object> metadata = new LinkedHashMap<>();
+        LOGGER.debug("Computing Coil metadata for {}", key);
         addCoilMetadata(stack, metadata);
+        LOGGER.debug("Computing Rotor metadata for {}", key);
         addRotorMetadata(stack, metadata);
+        LOGGER.debug("Computing Machine Recipe Modifiers metadata for {}", key);
         addMachineRecipeModifiers(stack, metadata);
+        LOGGER.debug("Computing Parallel Hatch metadata for {}", key);
         addParallelHatchMetadata(stack, metadata);
+        LOGGER.debug("Computing Rotor Holder metadata for {}", key);
         addRotorHolderMetadata(stack, metadata);
         return metadata;
     }
 
-    /**
-     * Adds the maximum parallel count for parallel control hatch items. Non-hatch
-     * items contribute nothing.
-     *
-     * <p>The hatch is identified through the {@link PartAbility#PARALLEL_HATCH}
-     * ability registry, and the count is derived from the machine tier the same way
-     * the hatch itself computes it ({@code 4^(tier - EV)}).
-     */
+    /** Adds the maximum parallel count advertised by parallel hatch item tooltips. */
     private void addParallelHatchMetadata(ItemStack stack, Map<String, Object> metadata) {
-        if (!(stack.getItem() instanceof MetaMachineItem machineItem)) {
-            return;
+        List<Component> tooltip = withoutCustomTooltips(stack).getTooltipLines(null, TooltipFlag.Default.NORMAL);
+        for (Component line : tooltip) {
+            Matcher matcher = MAX_PARALLEL_TOOLTIP.matcher(line.getString().trim());
+            if (matcher.find()) {
+                metadata.put("maxParallel", Integer.parseInt(matcher.group(1)));
+                if (hasTooltipLine(tooltip, ABSOLUTE_PARALLEL_TOOLTIP)) {
+                    metadata.put("isAbsolute", true);
+                }
+                return;
+            }
         }
-        MachineDefinition definition = machineItem.getDefinition();
-        if (!PartAbility.PARALLEL_HATCH.isApplicable(definition.getBlock())) {
-            return;
+    }
+
+    private static boolean hasTooltipLine(List<Component> tooltip, String expectedLine) {
+        for (Component line : tooltip) {
+            if (line.getString().trim().contains(expectedLine)) {
+                return true;
+            }
         }
-        int maxParallel = (int) Math.pow(4, definition.getTier() - GTValues.EV);
-        if (maxParallel > 0) {
-            metadata.put("maxParallel", maxParallel);
+        return false;
+    }
+
+    private static ItemStack withoutCustomTooltips(ItemStack stack) {
+        if (!stack.hasTag() || !stack.getTag().contains(CUSTOM_TOOLTIPS_NBT_KEY)) {
+            return stack;
         }
+        ItemStack copy = stack.copy();
+        CompoundTag tag = copy.getTag();
+        tag.remove(CUSTOM_TOOLTIPS_NBT_KEY);
+        if (tag.isEmpty()) {
+            copy.setTag(null);
+        }
+        return copy;
     }
 
     /**
@@ -139,10 +165,9 @@ public class GregTechItemMetadataExporter {
      * Adds the list of recipe-modifier ids for multiblock machine items. Single-block
      * machines and non-machine items contribute nothing.
      *
-     * <p>The runtime (a GregTech fork) exposes {@code RecipeModifier.getId()} and models
-     * {@code RecipeModifierList} as a record, neither of which exist in the upstream
-     * artifact this is compiled against; both are therefore accessed reflectively so the
-     * code compiles upstream yet runs correctly against the fork.
+    * <p>The project compiles against the StarT GTCEu fork, so fork APIs such as
+    * {@code RecipeModifier.getId()} and {@code RecipeModifierList.modifiers()} are
+    * used directly.
      */
     private void addMachineRecipeModifiers(ItemStack stack, Map<String, Object> metadata) {
         if (!(stack.getItem() instanceof MetaMachineItem machineItem)) {
@@ -172,43 +197,23 @@ public class GregTechItemMetadataExporter {
 
     /**
      * Recursively expands a {@link RecipeModifierList} into its individual modifiers.
-     * The {@code modifiers} field is read reflectively because it is exposed via a
-     * {@code getModifiers()} method upstream but a record accessor in the fork; the
-     * backing field is named {@code modifiers} in both.
      */
     private void flattenModifiers(RecipeModifier modifier, List<RecipeModifier> out) {
         if (modifier instanceof RecipeModifierList list) {
-            try {
-                Field field = RecipeModifierList.class.getDeclaredField("modifiers");
-                field.setAccessible(true);
-                Object value = field.get(list);
-                if (value instanceof RecipeModifier[] array) {
-                    for (RecipeModifier child : array) {
-                        flattenModifiers(child, out);
-                    }
-                    return;
-                }
-            } catch (ReflectiveOperationException e) {
-                LOGGER.warn("Failed to read recipe modifier list contents: {}", e.getMessage());
+            RecipeModifier[] modifiers = list.modifiers();
+            for (RecipeModifier child : modifiers) {
+                flattenModifiers(child, out);
             }
+            return;
         }
         out.add(modifier);
     }
 
     /**
-     * Resolves a modifier's stable id via the fork-only {@code getId()} method,
-     * falling back to the class simple name when that method is unavailable.
+     * Resolves a modifier's stable id.
      */
     private String modifierId(RecipeModifier modifier) {
-        try {
-            Object id = modifier.getClass().getMethod("getId").invoke(modifier);
-            if (id != null) {
-                return id.toString();
-            }
-        } catch (ReflectiveOperationException e) {
-            // Upstream lacks getId(); fall through to the class name.
-        }
-        return modifier.getClass().getSimpleName();
+        return modifier.getId();
     }
 
     /**

@@ -1,7 +1,8 @@
 plugins {
     id 'eclipse'
     id 'idea'
-    id 'net.minecraftforge.gradle' version '6.0.24'
+    //id 'net.minecraftforge.gradle' version '6.0.24'
+    id "net.neoforged.moddev.legacyforge" version "2.0.141"
 }
 
 group = project.mod_group_id
@@ -13,46 +14,68 @@ java {
     }
 }
 
-minecraft {
-    mappings channel: project.mappings_channel, version: project.mappings_version
+legacyForge {
+    version = project.mc_version + "-" + project.forge_version
 
     runs {
+        configureEach {
+            gameDirectory = project.file('run')
+            systemProperty 'forge.logging.markers', 'REGISTRIES'
+            logLevel = org.slf4j.event.Level.DEBUG
+        }
         client {
-            workingDirectory project.file('run')
-            property 'forge.logging.console.level', 'debug'
-            mods {
-                recipe_data_exporter {
-                    source sourceSets.main
-                }
-            }
+            client()
+            sourceSet = sourceSets.main
         }
 
         server {
-            workingDirectory project.file('run')
-            property 'forge.logging.console.level', 'debug'
-            mods {
-                recipe_data_exporter {
-                    source sourceSets.main
-                }
-            }
+            server()
+        }
+        data {
+            data()
+            sourceSet = sourceSets.main
+        }
+    }
+    mods {
+        "$mod_id" {
+            sourceSet(sourceSets.main)
         }
     }
 }
 
 repositories {
+    mavenLocal()
+    flatDir {
+        dir 'libs'
+    }
+    mavenCentral()
     maven {
         url = 'https://maven.minecraftforge.net'
     }
     maven {
         url = 'https://maven.blamejared.com'
     }
-    maven {
-        name = 'GTCEu Maven'
-        url = 'https://maven.gtceu.com'
-        content {
-            includeGroup 'com.gregtechceu.gtceu'
-        }
-    }
+    //maven {
+    //    name = 'GTCEu Maven'
+    //    url = 'https://maven.gtceu.com'
+    //    content {
+    //        includeGroup 'com.gregtechceu.gtceu'
+    //    }
+    //}
+    //maven {
+    //    name = "expandiumReleases"
+    //    url = "https://repo.expandium.net/releases"
+    //    content {
+    //        includeGroup 'com.gregtechceu.gtceu'
+    //    }
+    //}
+    //maven {
+    //    name = "githubPackages"
+    //    url = "https://maven.pkg.github.com/StarT-Dev-Team/GTM-StarT-Fork"
+    //    content {
+    //        includeGroup 'com.gregtechceu.gtceu'
+    //    }
+    //}
     maven {
         // LDLib (LowDragLib); GregTech bundles it via JarJar at runtime, so it is only needed at compile time
         name = 'FirstDarkDev Maven'
@@ -68,28 +91,17 @@ repositories {
 }
 
 dependencies {
-    minecraft "net.minecraftforge:forge:${mc_version}-${forge_version}"
+    //minecraft "net.minecraftforge:forge:${mc_version}-${forge_version}"
     
     // compile against JEI APIs but do not include them at runtime
-    compileOnly(fg.deobf("mezz.jei:jei-${mc_version}-common-api:${jei_version}"))
-    compileOnly(fg.deobf("mezz.jei:jei-${mc_version}-forge-api:${jei_version}"))
+    modCompileOnly("mezz.jei:jei-$mc_version-forge-api:$jei_version") { transitive = false }
+    modCompileOnly("mezz.jei:jei-$mc_version-common-api:$jei_version") { transitive = false }
     // at runtime, use the full JEI jar for Forge
-    runtimeOnly(fg.deobf("mezz.jei:jei-${mc_version}-forge:${jei_version}"))
+    modRuntimeOnly("mezz.jei:jei-$mc_version-forge:$jei_version") { transitive = false }
 
-    implementation fg.deobf("com.gregtechceu.gtceu:gtceu-${mc_version}:${gtm_version}")
-
-    // LDLib (LowDragLib) API, referenced by GregTech's multiblock pattern classes.
-    // GregTech bundles it via JarJar at runtime, so it is only needed at compile time.
-    // Only stable LDLib/Minecraft class symbols are referenced, so the raw (non-remapped)
-    // artifact is sufficient and avoids ForgeGradle resolving its unrelated transitive deps.
-    compileOnly("com.lowdragmc.ldlib:ldlib-forge-${mc_version}:${ldlib_version}") {
-        transitive = false
-    }
-
-    // compile against Create's API but rely on the modpack to provide it at runtime
-    compileOnly(fg.deobf("com.simibubi.create:create-${mc_version}:${create_version}:slim")) {
-        transitive = false
-    }
+    modImplementation("com.gregtechceu.gtceu:gtceu-st-$mc_version:$gtm_version") { transitive = false }
+    modImplementation("com.lowdragmc.ldlib:ldlib-forge-$mc_version:$ldlib_version") { transitive = false }
+    modImplementation("com.simibubi.create:create-$mc_version:$create_version:slim")
 
     // JSON serialization
     implementation "com.google.code.gson:gson:2.10.1"

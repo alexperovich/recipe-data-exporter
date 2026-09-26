@@ -5,11 +5,17 @@ import com.mojang.blaze3d.pipeline.TextureTarget;
 import com.mojang.blaze3d.platform.Lighting;
 import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.blaze3d.vertex.BufferBuilder;
+import com.mojang.blaze3d.vertex.BufferUploader;
+import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.Tesselator;
+import com.mojang.blaze3d.vertex.VertexFormat;
 import com.mojang.blaze3d.vertex.VertexSorting;
 import com.mojang.logging.LogUtils;
 import dev.alperovi.recipedataexporter.model.FluidExport;
 import dev.alperovi.recipedataexporter.model.ItemExport;
+import dev.alperovi.recipedataexporter.model.ItemTooltipExport;
 import mezz.jei.api.constants.VanillaTypes;
 import mezz.jei.api.forge.ForgeTypes;
 import mezz.jei.api.ingredients.IIngredientHelper;
@@ -17,12 +23,17 @@ import mezz.jei.api.ingredients.IIngredientRenderer;
 import mezz.jei.api.runtime.IIngredientManager;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.renderer.GameRenderer;
+import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.inventory.InventoryMenu;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraftforge.fluids.FluidStack;
 import net.minecraftforge.fluids.FluidType;
+import net.minecraftforge.client.extensions.common.IClientFluidTypeExtensions;
 import net.minecraftforge.fml.ModList;
 import org.joml.Matrix4f;
 import org.slf4j.Logger;
@@ -126,10 +137,13 @@ public class IngredientMetadataExporter {
                 // drop any recipe-specific tooltip NBT so the standard tooltip is used.
                 ItemStack icon = withoutCustomTooltips(representative.copyWithCount(1));
                 Meta meta = computeMeta(itemHelper, itemRenderer,
-                        icon, icon, key, framebuffer, imagesDir);
+                    icon, icon, key, framebuffer, imagesDir, this::renderIcon);
                 ItemExport base = entry.getValue();
+                ItemTooltipExport tooltip = new GregTechItemTooltipExporter().enrich(icon,
+                        new ItemTooltipExport(meta.tooltip, null, null), key);
                 tables.replaceItem(key, new ItemExport(base.id(), base.tag(), base.nbt(),
-                        meta.displayName, meta.modName, meta.tooltip, meta.image, base.metadata()));
+                        meta.displayName, meta.modName, emptyTooltip(tooltip) ? null : tooltip,
+                        meta.image, base.metadata()));
                 if (meta.image != null) {
                     written++;
                 }
@@ -155,7 +169,8 @@ public class IngredientMetadataExporter {
                 FluidStack icon = tooltipFluid.copy();
                 icon.setAmount(FluidType.BUCKET_VOLUME);
                 Meta meta = computeMeta(fluidHelper, fluidRenderer,
-                        tooltipFluid, icon, key, framebuffer, imagesDir);
+                    tooltipFluid, icon, key, framebuffer, imagesDir,
+                    (renderer, fluid, target) -> renderFluidIcon(fluid, target));
                 FluidExport base = entry.getValue();
                 tables.replaceFluid(key, new FluidExport(base.id(), base.tag(),
                         meta.displayName, meta.modName, meta.tooltip, meta.image));
@@ -180,7 +195,7 @@ public class IngredientMetadataExporter {
     @SuppressWarnings("removal") // IIngredientRenderer#getTooltip(V, TooltipFlag) has no addon-constructible replacement in this JEI version
     private <V> Meta computeMeta(IIngredientHelper<V> helper,
                                  IIngredientRenderer<V> renderer, V ingredient, V renderIngredient, String key,
-                                 RenderTarget framebuffer, Path imagesDir) {
+                                 RenderTarget framebuffer, Path imagesDir, IconRenderer<V> iconRenderer) {
         String displayName = null;
         String modName = null;
         List<String> tooltip = null;
@@ -215,7 +230,7 @@ public class IngredientMetadataExporter {
 
         String fileName = sanitize(key) + ".png";
         try {
-            NativeImage rendered = renderIcon(renderer, renderIngredient, framebuffer);
+            NativeImage rendered = iconRenderer.render(renderer, renderIngredient, framebuffer);
             try {
                 rendered.writeToFile(imagesDir.resolve(fileName));
                 image = "images/" + fileName;
@@ -235,6 +250,20 @@ public class IngredientMetadataExporter {
      * on the render thread.
      */
     private <V> NativeImage renderIcon(IIngredientRenderer<V> renderer, V ingredient, RenderTarget framebuffer) {
+        return renderIntoFramebuffer(framebuffer, () -> {
+            Minecraft minecraft = Minecraft.getInstance();
+            GuiGraphics graphics = new GuiGraphics(minecraft, minecraft.renderBuffers().bufferSource());
+            Lighting.setupFor3DItems();
+            renderer.render(graphics, ingredient);
+            graphics.flush();
+        });
+    }
+
+    private NativeImage renderFluidIcon(FluidStack ingredient, RenderTarget framebuffer) {
+        return renderIntoFramebuffer(framebuffer, () -> drawFluidSprite(ingredient));
+    }
+
+    private NativeImage renderIntoFramebuffer(RenderTarget framebuffer, Runnable draw) {
         framebuffer.setClearColor(0.0F, 0.0F, 0.0F, 0.0F);
         framebuffer.clear(Minecraft.ON_OSX);
         framebuffer.bindWrite(true);
@@ -253,11 +282,7 @@ public class IngredientMetadataExporter {
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
 
-        Minecraft minecraft = Minecraft.getInstance();
-        GuiGraphics graphics = new GuiGraphics(minecraft, minecraft.renderBuffers().bufferSource());
-        Lighting.setupFor3DItems();
-        renderer.render(graphics, ingredient);
-        graphics.flush();
+        draw.run();
 
         modelView.popPose();
         RenderSystem.applyModelViewMatrix();
@@ -269,6 +294,35 @@ public class IngredientMetadataExporter {
         image.flipY();
         framebuffer.unbindRead();
         return image;
+    }
+
+    private static void drawFluidSprite(FluidStack ingredient) {
+        IClientFluidTypeExtensions fluidClient = IClientFluidTypeExtensions.of(ingredient.getFluid());
+        ResourceLocation stillTexture = fluidClient.getStillTexture(ingredient);
+        TextureAtlasSprite sprite = Minecraft.getInstance()
+                .getTextureAtlas(InventoryMenu.BLOCK_ATLAS)
+                .apply(stillTexture);
+
+        int tint = fluidClient.getTintColor(ingredient);
+        float alpha = ((tint >>> 24) & 0xFF) / 255.0F;
+        if (alpha == 0.0F) {
+            alpha = 1.0F;
+        }
+        float red = ((tint >>> 16) & 0xFF) / 255.0F;
+        float green = ((tint >>> 8) & 0xFF) / 255.0F;
+        float blue = (tint & 0xFF) / 255.0F;
+
+        RenderSystem.setShader(GameRenderer::getPositionTexColorShader);
+        RenderSystem.setShaderTexture(0, InventoryMenu.BLOCK_ATLAS);
+
+        Tesselator tesselator = Tesselator.getInstance();
+        BufferBuilder buffer = tesselator.getBuilder();
+        buffer.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX_COLOR);
+        buffer.vertex(0.0D, GUI_UNITS, 100.0D).uv(sprite.getU0(), sprite.getV1()).color(red, green, blue, alpha).endVertex();
+        buffer.vertex(GUI_UNITS, GUI_UNITS, 100.0D).uv(sprite.getU1(), sprite.getV1()).color(red, green, blue, alpha).endVertex();
+        buffer.vertex(GUI_UNITS, 0.0D, 100.0D).uv(sprite.getU1(), sprite.getV0()).color(red, green, blue, alpha).endVertex();
+        buffer.vertex(0.0D, 0.0D, 100.0D).uv(sprite.getU0(), sprite.getV0()).color(red, green, blue, alpha).endVertex();
+        BufferUploader.drawWithShader(buffer.end());
     }
 
     /**
@@ -315,7 +369,22 @@ public class IngredientMetadataExporter {
         return key.replaceAll("[^A-Za-z0-9._-]", "_");
     }
 
+    private static boolean emptyTooltip(ItemTooltipExport tooltip) {
+        return empty(tooltip.defaultLines())
+                && empty(tooltip.modifierSections())
+                && empty(tooltip.pages());
+    }
+
+    private static boolean empty(List<?> lines) {
+        return lines == null || lines.isEmpty();
+    }
+
     /** Computed metadata for a single ingredient. Any field may be null. */
     private record Meta(String displayName, String modName, List<String> tooltip, String image) {
+    }
+
+    @FunctionalInterface
+    private interface IconRenderer<V> {
+        NativeImage render(IIngredientRenderer<V> renderer, V ingredient, RenderTarget framebuffer);
     }
 }

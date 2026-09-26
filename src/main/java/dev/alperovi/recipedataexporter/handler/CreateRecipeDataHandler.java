@@ -252,14 +252,14 @@ public class CreateRecipeDataHandler extends RecipeDataHandler {
         if (tag != null) {
             FluidStack representative = first != null && !first.isEmpty() ? first : null;
             String key = tables.internFluid(null, tag, representative);
-            return new FluidStackExport(key, ingredient.getRequiredAmount());
+            return new FluidStackExport(key, ingredient.getRequiredAmount(), null, null);
         }
         if (first == null || first.isEmpty()) {
             return null;
         }
         ResourceLocation location = net.minecraftforge.registries.ForgeRegistries.FLUIDS.getKey(first.getFluid());
         String key = tables.internFluid(location != null ? location.toString() : null, null, first);
-        return new FluidStackExport(key, ingredient.getRequiredAmount());
+        return new FluidStackExport(key, ingredient.getRequiredAmount(), null, null);
     }
 
     /**

@@ -130,12 +130,22 @@ public abstract class RecipeDataHandler {
      * interning the fluid data. Returns null for empty stacks.
      */
     protected FluidStackExport fluidFromStack(FluidStack stack) {
+        return fluidFromStack(stack, null, null);
+    }
+
+    /**
+     * Builds a {@link FluidStackExport} from a Forge {@link FluidStack},
+     * interning the fluid data and carrying the given chanced-output
+     * probability and per-voltage-tier chance boost. Returns null for empty
+     * stacks.
+     */
+    protected FluidStackExport fluidFromStack(FluidStack stack, Long probability, Long tierChanceBoost) {
         if (stack == null || stack.isEmpty()) {
             return null;
         }
         ResourceLocation location = ForgeRegistries.FLUIDS.getKey(stack.getFluid());
         String key = tables.internFluid(location != null ? location.toString() : null, null, stack);
-        return new FluidStackExport(key, stack.getAmount());
+        return new FluidStackExport(key, stack.getAmount(), probability, tierChanceBoost);
     }
 
     /**
@@ -217,7 +227,8 @@ public abstract class RecipeDataHandler {
                 mergedByKey.put(fluid.key(), fluid);
             } else {
                 mergedByKey.put(fluid.key(), new FluidStackExport(
-                        existing.key(), existing.amount() + fluid.amount()));
+                        existing.key(), existing.amount() + fluid.amount(), existing.probability(),
+                        existing.tierChanceBoost()));
             }
         }
 
